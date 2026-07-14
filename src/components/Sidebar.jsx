@@ -1,5 +1,5 @@
 import React from "react";
-import { Search, Plus, Settings, LogOut, MessageSquare, Hash } from "lucide-react";
+import { Search, Plus, Settings, LogOut, MessageSquare, Hash, X, Lock, Key } from "lucide-react";
 import { signOut } from "../services/auth";
 
 export default function Sidebar({
@@ -11,6 +11,7 @@ export default function Sidebar({
   setSearchQuery,
   onOpenSettings,
   onOpenCreateRoom,
+  onOpenJoinPrivate,
   isMobileOpen,
   setIsMobileOpen,
   onlineUsers = []
@@ -49,6 +50,13 @@ export default function Sidebar({
         
         <div className="header-actions">
           <button 
+            className="icon-btn mobile-only-btn" 
+            onClick={() => setIsMobileOpen(false)}
+            title="Close Menu"
+          >
+            <X size={18} />
+          </button>
+          <button 
             className="icon-btn" 
             onClick={onOpenSettings} 
             title="Settings"
@@ -78,10 +86,16 @@ export default function Sidebar({
           />
         </div>
         
-        <button className="btn-create-room" onClick={onOpenCreateRoom}>
-          <Plus size={16} />
-          <span>New Room</span>
-        </button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button className="btn-create-room" onClick={onOpenCreateRoom} style={{ flex: 1 }}>
+            <Plus size={16} />
+            <span>New Room</span>
+          </button>
+          <button className="btn-create-room" onClick={onOpenJoinPrivate} style={{ flex: 1, background: "rgba(16, 185, 129, 0.1)", border: "1px dashed rgba(16, 185, 129, 0.3)", color: "var(--success)" }}>
+            <Key size={16} />
+            <span>Private Room</span>
+          </button>
+        </div>
       </div>
 
       {/* Room list */}
@@ -104,7 +118,7 @@ export default function Sidebar({
                 }}
               >
                 <div className="room-icon-box">
-                  <Hash size={18} />
+                  {room.isPrivate ? <Lock size={16} color="var(--warning)" /> : <Hash size={18} />}
                 </div>
                 <div className="room-details">
                   <div className="room-title-row">

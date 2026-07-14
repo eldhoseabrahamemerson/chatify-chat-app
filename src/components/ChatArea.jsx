@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Image, X, Smile, MessageSquare, ArrowLeft } from "lucide-react";
+import { Send, Image, X, Smile, MessageSquare, ArrowLeft, Lock, Key } from "lucide-react";
 import { sendMessage, subscribeToMessages } from "../services/db";
 
 const EMOJIS = ["😀", "😂", "🔥", "👍", "❤️", "🙌", "🎉", "💻", "✨", "🚀", "💡", "👀"];
@@ -8,7 +8,7 @@ export default function ChatArea({
   activeRoom, 
   currentUser, 
   onToggleSidebar,
-  onlineCount = 0
+  usersInRoom = []
 }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
@@ -116,19 +116,76 @@ export default function ChatArea({
   return (
     <div className="chat-panel">
       {/* Chat Header */}
-      <div className="chat-header">
+      <div className="chat-header" style={{ gap: "12px", flexWrap: "wrap", height: "auto", minHeight: "68px", padding: "10px 24px" }}>
         <div className="chat-header-info">
-          <button className="icon-btn mobile-only-btn" onClick={onToggleSidebar} style={{ display: "none" }}>
+          <button className="icon-btn mobile-only-btn" onClick={onToggleSidebar}>
             <ArrowLeft size={20} />
           </button>
           <div className="chat-header-details">
-            <h3 className="chat-header-title"># {activeRoom.name}</h3>
-            <span className="chat-header-subtitle">{activeRoom.description}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <h3 className="chat-header-title"># {activeRoom.name}</h3>
+              {activeRoom.isPrivate && <Lock size={14} color="var(--warning)" />}
+            </div>
+            <span className="chat-header-subtitle">
+              {activeRoom.description} &bull; Created by {activeRoom.createdBy || "System"}
+            </span>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--success)", fontWeight: "600", padding: "6px 12px", backgroundColor: "rgba(16, 185, 129, 0.05)", borderRadius: "var(--radius-md)", border: "1px solid rgba(16, 185, 129, 0.1)" }}>
-          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "var(--success)", display: "inline-block" }}></span>
-          <span>{onlineCount} {onlineCount === 1 ? "user" : "users"} online</span>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {activeRoom.isPrivate && (
+            <div 
+              onClick={() => {
+                navigator.clipboard.writeText(activeRoom.inviteCode);
+                alert(`Invite Code "${activeRoom.inviteCode}" copied to clipboard!`);
+              }}
+              title="Click to copy invite code"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "11px",
+                color: "var(--warning)",
+                backgroundColor: "rgba(245, 158, 11, 0.05)",
+                border: "1px solid rgba(245, 158, 11, 0.15)",
+                borderRadius: "8px",
+                padding: "6px 10px",
+                cursor: "pointer",
+                userSelect: "none"
+              }}
+            >
+              <Key size={12} />
+              <span>Code: <strong>{activeRoom.inviteCode}</strong></span>
+            </div>
+          )}
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "var(--success)", fontWeight: "600", padding: "6px 12px", backgroundColor: "rgba(16, 185, 129, 0.05)", borderRadius: "var(--radius-md)", border: "1px solid rgba(16, 185, 129, 0.1)" }}>
+            <div style={{ display: "flex", alignItems: "center", marginRight: "4px" }}>
+              {usersInRoom.slice(0, 3).map((user, idx) => (
+                <img 
+                  key={user.uid}
+                  src={user.photoURL}
+                  alt={user.displayName}
+                  title={`${user.displayName} is in this room`}
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    borderRadius: "50%",
+                    border: "1.5px solid var(--bg-secondary)",
+                    marginLeft: idx > 0 ? "-6px" : "0",
+                    objectFit: "cover"
+                  }}
+                />
+              ))}
+              {usersInRoom.length > 3 && (
+                <span style={{ fontSize: "10px", color: "var(--text-muted)", marginLeft: "4px" }}>
+                  +{usersInRoom.length - 3}
+                </span>
+              )}
+            </div>
+            <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "var(--success)", display: "inline-block" }}></span>
+            <span>{usersInRoom.length} active</span>
+          </div>
         </div>
       </div>
 
@@ -179,35 +236,12 @@ export default function ChatArea({
 
       {/* Emoji suggestion panel */}
       {showEmojiPicker && (
-        <div 
-          className="emoji-picker-container glass-panel"
-          style={{
-            position: "absolute",
-            bottom: "84px",
-            left: "24px",
-            padding: "10px",
-            borderRadius: "12px",
-            display: "flex",
-            gap: "8px",
-            boxShadow: "var(--shadow-lg)",
-            zIndex: 10
-          }}
-        >
+        <div className="emoji-picker-container glass-panel">
           {EMOJIS.map(emoji => (
             <button 
               key={emoji} 
               onClick={() => addEmoji(emoji)}
-              style={{
-                background: "none",
-                border: "none",
-                fontSize: "20px",
-                cursor: "pointer",
-                padding: "4px",
-                borderRadius: "4px",
-                transition: "transform 0.1s"
-              }}
-              onMouseEnter={(e) => e.target.style.transform = "scale(1.2)"}
-              onMouseLeave={(e) => e.target.style.transform = "scale(1)"}
+              className="emoji-btn"
             >
               {emoji}
             </button>

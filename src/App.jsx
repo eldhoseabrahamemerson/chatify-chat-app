@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { onAuthStateChanged } from "./services/auth";
 import { subscribeToRooms, updateUserPresence, subscribeToOnlineUsers } from "./services/db";
 import { isFirebaseConfigured } from "./services/firebase";
@@ -7,6 +7,7 @@ import Sidebar from "./components/Sidebar";
 import ChatArea from "./components/ChatArea";
 import SettingsModal from "./components/SettingsModal";
 import CreateRoomModal from "./components/CreateRoomModal";
+import JoinRoomModal from "./components/JoinRoomModal";
 import { MessageSquare } from "lucide-react";
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
   // Modals state
   const [showSettings, setShowSettings] = useState(false);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
+  const [showJoinRoom, setShowJoinRoom] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
 
   // Listen to Auth state changes
@@ -39,6 +41,16 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  const activeRoomRef = useRef(activeRoom);
+
+  // Update room reference and presence when room changes
+  useEffect(() => {
+    activeRoomRef.current = activeRoom;
+    if (currentUser) {
+      updateUserPresence(currentUser, "online", activeRoom?.id);
+    }
+  }, [activeRoom, currentUser]);
+
   // Handle Presence Heartbeat & Online Subscriptions
   useEffect(() => {
     if (!currentUser) {
@@ -47,10 +59,10 @@ export default function App() {
     }
 
     // Mark online initially
-    updateUserPresence(currentUser, "online");
+    updateUserPresence(currentUser, "online", activeRoomRef.current?.id);
 
     const heartbeat = setInterval(() => {
-      updateUserPresence(currentUser, "online");
+      updateUserPresence(currentUser, "online", activeRoomRef.current?.id);
     }, 45000);
 
     const unsubscribe = subscribeToOnlineUsers((list) => {
@@ -60,7 +72,7 @@ export default function App() {
     return () => {
       clearInterval(heartbeat);
       unsubscribe();
-      updateUserPresence(currentUser, "offline");
+      updateUserPresence(currentUser, "offline", null);
     };
   }, [currentUser]);
 
@@ -71,7 +83,7 @@ export default function App() {
       return;
     }
 
-    const unsubscribe = subscribeToRooms((updatedRooms) => {
+    const unsubscribe = subscribeToRooms(currentUser, (updatedRooms) => {
       // Sort rooms so that the latest created is first, or by system fallback
       const sorted = [...updatedRooms].sort((a, b) => b.createdAt - a.createdAt);
       setRooms(sorted);
@@ -86,6 +98,13 @@ export default function App() {
 
     return () => unsubscribe();
   }, [currentUser]);
+
+  // Auto-open mobile sidebar if no room is selected (helps on mobile onboarding)
+  useEffect(() => {
+    if (!activeRoom) {
+      setIsMobileSidebarOpen(true);
+    }
+  }, [activeRoom]);
 
   if (authLoading) {
     return (
@@ -145,6 +164,7 @@ export default function App() {
           setSearchQuery={setSearchQuery}
           onOpenSettings={() => setShowSettings(true)}
           onOpenCreateRoom={() => setShowCreateRoom(true)}
+          onOpenJoinPrivate={() => setShowJoinRoom(true)}
           isMobileOpen={isMobileSidebarOpen}
           setIsMobileOpen={setIsMobileSidebarOpen}
           onlineUsers={onlineUsers}
@@ -154,7 +174,7 @@ export default function App() {
           activeRoom={activeRoom}
           currentUser={currentUser}
           onToggleSidebar={() => setIsMobileSidebarOpen(true)}
-          onlineCount={onlineUsers.length}
+          usersInRoom={onlineUsers.filter(u => u.currentRoomId === activeRoom?.id)}
         />
 
         {/* Settings Modal */}
@@ -173,6 +193,18 @@ export default function App() {
             onClose={() => setShowCreateRoom(false)}
             onRoomCreated={(newRoom) => {
               setActiveRoom(newRoom);
+              setIsMobileSidebarOpen(false);
+            }}
+          />
+        )}
+
+        {/* Join Room Modal */}
+        {showJoinRoom && (
+          <JoinRoomModal
+            currentUser={currentUser}
+            onClose={() => setShowJoinRoom(false)}
+            onRoomJoined={(room) => {
+              setActiveRoom(room);
               setIsMobileSidebarOpen(false);
             }}
           />

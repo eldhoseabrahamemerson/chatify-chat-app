@@ -6,7 +6,11 @@ import {
   orderBy, 
   serverTimestamp,
   doc,
-  setDoc
+  setDoc,
+  where,
+  getDocs,
+  updateDoc,
+  arrayUnion
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage, isFirebaseConfigured } from "./firebase";
@@ -81,30 +85,42 @@ const saveMockMessages = (roomId, messages) => {
   localStorage.setItem(`chat_app_mock_messages_${roomId}`, JSON.stringify(messages));
 };
 
-const mockSubscribeToRooms = (callback) => {
-  mockListeners.rooms.push(callback);
-  // Emit current rooms list immediately
-  callback(getMockRooms());
+const mockSubscribeToRooms = (user, callback) => {
+  const emitRooms = (roomsList) => {
+    const filtered = roomsList.filter(room => 
+      !room.isPrivate || 
+      room.creatorId === user.uid || 
+      (room.members && room.members.includes(user.uid))
+    );
+    callback(filtered);
+  };
+  
+  mockListeners.rooms.push(emitRooms);
+  emitRooms(getMockRooms());
 
   return () => {
-    mockListeners.rooms = mockListeners.rooms.filter(cb => cb !== callback);
+    mockListeners.rooms = mockListeners.rooms.filter(cb => cb !== emitRooms);
   };
 };
 
-const mockCreateRoom = async (name, description, creator) => {
+const mockCreateRoom = async (name, description, creator, isPrivate = false, inviteCode = "") => {
   const rooms = getMockRooms();
   const newRoom = {
     id: "room_" + Math.random().toString(36).substr(2, 9),
     name,
     description: description || "No description provided.",
     createdAt: Date.now(),
-    createdBy: creator.displayName
+    createdBy: creator.displayName,
+    creatorId: creator.uid,
+    isPrivate,
+    inviteCode: isPrivate ? inviteCode.trim().toUpperCase() : "",
+    members: [creator.uid]
   };
   rooms.push(newRoom);
   saveMockRooms(rooms);
 
   // Notify active listeners
-  mockListeners.rooms.forEach(cb => cb(rooms));
+  mockListeners.rooms.forEach(cb => cb(getMockRooms()));
   return newRoom;
 };
 
@@ -152,39 +168,73 @@ const mockSendMessage = async (roomId, text, imageFile, sender) => {
   return newMessage;
 };
 
+const mockJoinRoomWithCode = async (inviteCode, user) => {
+  const rooms = getMockRooms();
+  const roomIndex = rooms.findIndex(r => r.isPrivate && r.inviteCode === inviteCode.trim().toUpperCase());
+  
+  if (roomIndex === -1) {
+    throw new Error("No room found with this invite code.");
+  }
+  
+  const room = rooms[roomIndex];
+  if (!room.members) {
+    room.members = [];
+  }
+  
+  if (!room.members.includes(user.uid)) {
+    room.members.push(user.uid);
+    rooms[roomIndex] = room;
+    saveMockRooms(rooms);
+    // Notify active listeners
+    mockListeners.rooms.forEach(cb => cb(getMockRooms()));
+  }
+  
+  return room;
+};
+
 
 /* ==========================================
    LIVE FIREBASE FIRESTORE & STORAGE IMPLEMENTATION
    ========================================== */
 
-const liveSubscribeToRooms = (callback) => {
+const liveSubscribeToRooms = (user, callback) => {
   const q = query(collection(db, "rooms"), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
     const rooms = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
-      // Handle fallback timestamp formatting
       createdAt: doc.data().createdAt?.toMillis() || Date.now()
     }));
-    callback(rooms);
+    
+    // Filter private rooms in-memory
+    const filtered = rooms.filter(room => 
+      !room.isPrivate || 
+      room.creatorId === user.uid || 
+      (room.members && room.members.includes(user.uid))
+    );
+    
+    callback(filtered);
   }, (error) => {
     console.error("Error subscribing to rooms:", error);
   });
 };
 
-const liveCreateRoom = async (name, description, creator) => {
-  const docRef = await addDoc(collection(db, "rooms"), {
+const liveCreateRoom = async (name, description, creator, isPrivate = false, inviteCode = "") => {
+  const roomData = {
     name,
     description: description || "",
     createdAt: serverTimestamp(),
     createdBy: creator.displayName,
-    creatorId: creator.uid
-  });
+    creatorId: creator.uid,
+    isPrivate,
+    inviteCode: isPrivate ? inviteCode.trim().toUpperCase() : "",
+    members: [creator.uid]
+  };
+  const docRef = await addDoc(collection(db, "rooms"), roomData);
   return {
     id: docRef.id,
-    name,
-    description,
-    createdBy: creator.displayName
+    ...roomData,
+    createdAt: Date.now()
   };
 };
 
@@ -235,6 +285,32 @@ const liveSendMessage = async (roomId, text, imageFile, sender) => {
   });
 };
 
+const liveJoinRoomWithCode = async (inviteCode, user) => {
+  const roomsRef = collection(db, "rooms");
+  const q = query(roomsRef, where("isPrivate", "==", true), where("inviteCode", "==", inviteCode.trim().toUpperCase()));
+  const snapshot = await getDocs(q);
+  
+  if (snapshot.empty) {
+    throw new Error("No room found with this invite code.");
+  }
+  
+  const roomDoc = snapshot.docs[0];
+  const roomData = roomDoc.data();
+  
+  if (!roomData.members || !roomData.members.includes(user.uid)) {
+    const docRef = doc(db, "rooms", roomDoc.id);
+    await updateDoc(docRef, {
+      members: arrayUnion(user.uid)
+    });
+  }
+  
+  return {
+    id: roomDoc.id,
+    ...roomData,
+    members: roomData.members ? [...roomData.members, user.uid] : [user.uid]
+  };
+};
+
 
 /* ==========================================
    PRESENCE & ONLINE USER TRACKING
@@ -250,19 +326,27 @@ const mockSubscribeToOnlineUsers = (callback) => {
         uid: u.uid,
         displayName: u.displayName,
         photoURL: u.photoURL,
-        status: "online",
-        lastActive: Date.now()
+        status: u.status || "online",
+        currentRoomId: u.currentRoomId || null,
+        lastActive: u.lastActive || Date.now()
       }));
 
       if (currentMock && !list.find(u => u.uid === currentMock.uid)) {
-        list.push({ ...currentMock, status: "online", lastActive: Date.now() });
+        list.push({ 
+          ...currentMock, 
+          status: "online", 
+          currentRoomId: currentMock.currentRoomId || null,
+          lastActive: Date.now() 
+        });
       }
 
+      // Add bots with static mock room presence
       list.push({
         uid: "bot_1",
         displayName: "Sarah Coder",
         photoURL: "https://api.dicebear.com/7.x/adventurer/svg?seed=sarah",
         status: "online",
+        currentRoomId: "room_react",
         lastActive: Date.now()
       });
       list.push({
@@ -270,6 +354,7 @@ const mockSubscribeToOnlineUsers = (callback) => {
         displayName: "Alex Dev",
         photoURL: "https://api.dicebear.com/7.x/adventurer/svg?seed=alex",
         status: "online",
+        currentRoomId: "room_general",
         lastActive: Date.now()
       });
 
@@ -284,16 +369,44 @@ const mockSubscribeToOnlineUsers = (callback) => {
   return () => clearInterval(interval);
 };
 
-const mockUpdateUserPresence = async (user, status) => {
+const mockUpdateUserPresence = async (user, status, currentRoomId = null) => {
   if (user) {
     try {
-      const updated = { ...user, status: status === "online" ? "Active" : "Offline" };
+      const updated = { 
+        ...user, 
+        status: status === "online" ? "Active" : "Offline",
+        currentRoomId 
+      };
       localStorage.setItem("chat_app_mock_user", JSON.stringify(updated));
-    } catch {}
+      
+      let mockUsersDb = [];
+      try {
+        mockUsersDb = JSON.parse(localStorage.getItem("chat_app_mock_users_db") || "[]");
+      } catch {}
+      
+      const userIndex = mockUsersDb.findIndex(u => u.uid === user.uid);
+      const userPresenceInfo = {
+        uid: user.uid,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        status: status,
+        currentRoomId,
+        lastActive: Date.now()
+      };
+      
+      if (userIndex > -1) {
+        mockUsersDb[userIndex] = userPresenceInfo;
+      } else {
+        mockUsersDb.push(userPresenceInfo);
+      }
+      localStorage.setItem("chat_app_mock_users_db", JSON.stringify(mockUsersDb));
+    } catch (e) {
+      console.error(e);
+    }
   }
 };
 
-const liveUpdateUserPresence = async (user, status) => {
+const liveUpdateUserPresence = async (user, status, currentRoomId = null) => {
   if (!user) return;
   try {
     const userDocRef = doc(db, "users", user.uid);
@@ -302,6 +415,7 @@ const liveUpdateUserPresence = async (user, status) => {
       displayName: user.displayName || user.email.split("@")[0],
       photoURL: user.photoURL || "",
       status: status,
+      currentRoomId: currentRoomId,
       lastActive: Date.now()
     }, { merge: true });
   } catch (e) {
@@ -331,3 +445,4 @@ export const subscribeToMessages = isFirebaseConfigured ? liveSubscribeToMessage
 export const sendMessage = isFirebaseConfigured ? liveSendMessage : mockSendMessage;
 export const subscribeToOnlineUsers = isFirebaseConfigured ? liveSubscribeToOnlineUsers : mockSubscribeToOnlineUsers;
 export const updateUserPresence = isFirebaseConfigured ? liveUpdateUserPresence : mockUpdateUserPresence;
+export const joinRoomWithCode = isFirebaseConfigured ? liveJoinRoomWithCode : mockJoinRoomWithCode;
