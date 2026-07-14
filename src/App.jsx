@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { onAuthStateChanged } from "./services/auth";
-import { subscribeToRooms, updateUserPresence, subscribeToOnlineUsers } from "./services/db";
+import { subscribeToRooms, updateUserPresence, subscribeToOnlineUsers, leaveRoom } from "./services/db";
 import { isFirebaseConfigured } from "./services/firebase";
 import AuthScreen from "./components/AuthScreen";
 import Sidebar from "./components/Sidebar";
@@ -106,6 +106,16 @@ export default function App() {
     }
   }, [activeRoom]);
 
+  const handleLeaveRoom = async (roomId) => {
+    try {
+      await leaveRoom(roomId, currentUser);
+      setActiveRoom(null);
+    } catch (e) {
+      console.error("Failed to leave room:", e);
+      alert("Failed to leave room.");
+    }
+  };
+
   if (authLoading) {
     return (
       <div 
@@ -175,6 +185,7 @@ export default function App() {
           currentUser={currentUser}
           onToggleSidebar={() => setIsMobileSidebarOpen(true)}
           usersInRoom={onlineUsers.filter(u => u.currentRoomId === activeRoom?.id)}
+          onLeaveRoom={handleLeaveRoom}
         />
 
         {/* Settings Modal */}

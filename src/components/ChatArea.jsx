@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Image, X, Smile, MessageSquare, ArrowLeft, Lock, Key } from "lucide-react";
+import { Send, Image, X, Smile, MessageSquare, ArrowLeft, Lock, Key, LogOut } from "lucide-react";
 import { sendMessage, subscribeToMessages } from "../services/db";
 
 const EMOJIS = ["😀", "😂", "🔥", "👍", "❤️", "🙌", "🎉", "💻", "✨", "🚀", "💡", "👀"];
@@ -8,7 +8,8 @@ export default function ChatArea({
   activeRoom, 
   currentUser, 
   onToggleSidebar,
-  usersInRoom = []
+  usersInRoom = [],
+  onLeaveRoom
 }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
@@ -84,6 +85,16 @@ export default function ChatArea({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const handleLeave = async () => {
+    if (window.confirm(`Are you sure you want to leave #${activeRoom.name}?`)) {
+      try {
+        await onLeaveRoom(activeRoom.id);
+      } catch (error) {
+        console.error("Failed to leave room:", error);
+      }
     }
   };
 
@@ -186,6 +197,39 @@ export default function ChatArea({
             <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "var(--success)", display: "inline-block" }}></span>
             <span>{usersInRoom.length} active</span>
           </div>
+
+          {activeRoom.id !== "room_general" && (
+            <button 
+              onClick={handleLeave}
+              className="btn-sec"
+              title="Leave this channel"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "12px",
+                padding: "6px 12px",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+                borderRadius: "var(--radius-md)",
+                color: "var(--danger)",
+                backgroundColor: "rgba(239, 68, 68, 0.05)",
+                cursor: "pointer",
+                fontWeight: "600",
+                transition: "var(--transition-fast)"
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = "rgba(239, 68, 68, 0.1)";
+                e.target.style.borderColor = "rgba(239, 68, 68, 0.3)";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = "rgba(239, 68, 68, 0.05)";
+                e.target.style.borderColor = "rgba(239, 68, 68, 0.2)";
+              }}
+            >
+              <LogOut size={13} />
+              <span>Leave</span>
+            </button>
+          )}
         </div>
       </div>
 

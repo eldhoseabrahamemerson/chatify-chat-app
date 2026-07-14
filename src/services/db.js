@@ -10,7 +10,8 @@ import {
   where,
   getDocs,
   updateDoc,
-  arrayUnion
+  arrayUnion,
+  arrayRemove
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage, isFirebaseConfigured } from "./firebase";
@@ -192,6 +193,21 @@ const mockJoinRoomWithCode = async (inviteCode, user) => {
   return room;
 };
 
+const mockLeaveRoom = async (roomId, user) => {
+  const rooms = getMockRooms();
+  const roomIndex = rooms.findIndex(r => r.id === roomId);
+  if (roomIndex !== -1) {
+    const room = rooms[roomIndex];
+    if (room.members) {
+      room.members = room.members.filter(uid => uid !== user.uid);
+      rooms[roomIndex] = room;
+      saveMockRooms(rooms);
+      // Notify active listeners
+      mockListeners.rooms.forEach(cb => cb(getMockRooms()));
+    }
+  }
+};
+
 
 /* ==========================================
    LIVE FIREBASE FIRESTORE & STORAGE IMPLEMENTATION
@@ -309,6 +325,13 @@ const liveJoinRoomWithCode = async (inviteCode, user) => {
     ...roomData,
     members: roomData.members ? [...roomData.members, user.uid] : [user.uid]
   };
+};
+
+const liveLeaveRoom = async (roomId, user) => {
+  const docRef = doc(db, "rooms", roomId);
+  await updateDoc(docRef, {
+    members: arrayRemove(user.uid)
+  });
 };
 
 
@@ -446,3 +469,4 @@ export const sendMessage = isFirebaseConfigured ? liveSendMessage : mockSendMess
 export const subscribeToOnlineUsers = isFirebaseConfigured ? liveSubscribeToOnlineUsers : mockSubscribeToOnlineUsers;
 export const updateUserPresence = isFirebaseConfigured ? liveUpdateUserPresence : mockUpdateUserPresence;
 export const joinRoomWithCode = isFirebaseConfigured ? liveJoinRoomWithCode : mockJoinRoomWithCode;
+export const leaveRoom = isFirebaseConfigured ? liveLeaveRoom : mockLeaveRoom;
