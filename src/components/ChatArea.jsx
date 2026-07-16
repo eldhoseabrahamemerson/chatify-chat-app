@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Send, Image, X, Smile, MessageSquare, ArrowLeft, Lock, Key, LogOut } from "lucide-react";
-import { sendMessage, subscribeToMessages } from "../services/db";
+import { sendMessage, subscribeToMessages, subscribeToTypingUsers, setUserTypingStatus } from "../services/db";
 
 const EMOJIS = ["😀", "😂", "🔥", "👍", "❤️", "🙌", "🎉", "💻", "✨", "🚀", "💡", "👀"];
 
@@ -17,8 +17,28 @@ export default function ChatArea({
   const [imagePreview, setImagePreview] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [typingUsers, setTypingUsers] = useState([]);
   
   const scrollRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+
+  // Subscribe to typing status
+  useEffect(() => {
+    if (!activeRoom) return;
+
+    setTypingUsers([]);
+    const unsubscribe = subscribeToTypingUsers(activeRoom.id, currentUser, (list) => {
+      setTypingUsers(list);
+    });
+
+    return () => {
+      unsubscribe();
+      setUserTypingStatus(activeRoom.id, currentUser, false);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, [activeRoom, currentUser]);
 
   // Subscribe to messages when activeRoom change
   useEffect(() => {
@@ -37,7 +57,7 @@ export default function ChatArea({
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]);
+  }, [messages, typingUsers]);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -72,6 +92,11 @@ export default function ChatArea({
     handleRemoveImage();
     setShowEmojiPicker(false);
 
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    setUserTypingStatus(activeRoom.id, currentUser, false);
+
     try {
       await sendMessage(activeRoom.id, textToSend, imgFile, currentUser);
     } catch (error) {
@@ -81,10 +106,41 @@ export default function ChatArea({
     }
   };
 
+  const handleInputChange = (e) => {
+    setInputText(e.target.value);
+    
+    // Trigger typing state
+    setUserTypingStatus(activeRoom.id, currentUser, true);
+    
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    typingTimeoutRef.current = setTimeout(() => {
+      setUserTypingStatus(activeRoom.id, currentUser, false);
+    }, 2500);
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const formatDateDivider = (timestamp) => {
+    if (!timestamp) return "";
+    const messageDate = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (messageDate.toDateString() === today.toDateString()) {
+      return "Today";
+    } else if (messageDate.toDateString() === yesterday.toDateString()) {
+      return "Yesterday";
+    } else {
+      return messageDate.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" });
     }
   };
 
@@ -240,41 +296,69 @@ export default function ChatArea({
             No messages yet. Send a message to start the conversation!
           </div>
         ) : (
-          messages.map((msg, index) => {
-            const isSelf = msg.senderId === currentUser.uid;
-            return (
-              <div 
-                key={msg.id || index} 
-                className={`message-group ${isSelf ? "self" : "other"}`}
-              >
-                {!isSelf && (
-                  <img 
-                    src={msg.senderAvatar} 
-                    alt={msg.senderName} 
-                    className="message-sender-avatar"
-                  />
-                )}
-                <div className="message-content-wrapper">
-                  {!isSelf && <span className="message-sender-name">{msg.senderName}</span>}
-                  <div className="message-bubble">
-                    {msg.text && <p>{msg.text}</p>}
-                    {msg.imageUrl && (
+          (() => {
+            let lastDateString = null;
+            return messages.map((msg, index) => {
+              const isSelf = msg.senderId === currentUser.uid;
+              const msgDate = new Date(msg.createdAt).toDateString();
+              const showDateDivider = msgDate !== lastDateString;
+              lastDateString = msgDate;
+
+              return (
+                <React.Fragment key={msg.id || index}>
+                  {showDateDivider && (
+                    <div className="date-divider">
+                      <span>{formatDateDivider(msg.createdAt)}</span>
+                    </div>
+                  )}
+                  <div className={`message-group ${isSelf ? "self" : "other"}`}>
+                    {!isSelf && (
                       <img 
-                        src={msg.imageUrl} 
-                        alt="Shared image" 
-                        className="message-image" 
-                        onClick={() => window.open(msg.imageUrl, '_blank')}
+                        src={msg.senderAvatar} 
+                        alt={msg.senderName} 
+                        className="message-sender-avatar"
                       />
                     )}
+                    <div className="message-content-wrapper">
+                      {!isSelf && <span className="message-sender-name">{msg.senderName}</span>}
+                      <div className="message-bubble">
+                        {msg.text && <p>{msg.text}</p>}
+                        {msg.imageUrl && (
+                          <img 
+                            src={msg.imageUrl} 
+                            alt="Shared image" 
+                            className="message-image" 
+                            onClick={() => window.open(msg.imageUrl, '_blank')}
+                          />
+                        )}
+                      </div>
+                      <div className="message-meta">
+                        <span>{formatTime(msg.createdAt)}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="message-meta">
-                    <span>{formatTime(msg.createdAt)}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+                </React.Fragment>
+              );
+            });
+          })()
         )}
+        
+        {/* Typing Indicator */}
+        {typingUsers.length > 0 && (
+          <div className="typing-indicator-container">
+            <div className="typing-bubble">
+              <div className="typing-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <span className="typing-text">
+                {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
+              </span>
+            </div>
+          </div>
+        )}
+
         <div ref={scrollRef} />
       </div>
 
@@ -329,7 +413,7 @@ export default function ChatArea({
             placeholder={`Message #${activeRoom.name}...`}
             className="message-input"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyPress}
             disabled={loading}
           />

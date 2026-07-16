@@ -8,6 +8,7 @@ import ChatArea from "./components/ChatArea";
 import SettingsModal from "./components/SettingsModal";
 import CreateRoomModal from "./components/CreateRoomModal";
 import JoinRoomModal from "./components/JoinRoomModal";
+import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import { MessageSquare } from "lucide-react";
 
 export default function App() {
@@ -141,6 +142,11 @@ export default function App() {
   // Auth Gate
   if (!currentUser) {
     return <AuthScreen onAuthSuccess={setCurrentUser} />;
+  }
+
+  // Email Verification Gate (Live Firebase Mode Only)
+  if (isFirebaseConfigured && currentUser && !currentUser.emailVerified) {
+    return <VerifyEmailScreen currentUser={currentUser} onVerified={setCurrentUser} />;
   }
 
   return (

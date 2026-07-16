@@ -3,7 +3,10 @@ import {
   signInWithEmailAndPassword, 
   signOut as fbSignOut, 
   updateProfile as fbUpdateProfile,
-  onAuthStateChanged as fbOnAuthStateChanged
+  onAuthStateChanged as fbOnAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  sendEmailVerification
 } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { auth, storage, isFirebaseConfigured } from "./firebase";
@@ -55,8 +58,11 @@ const saveMockUsers = (users) => {
 
 const mockOnAuthStateChanged = (callback) => {
   mockUserListener = callback;
-  // Trigger initial state
-  callback(currentMockUser);
+  if (currentMockUser) {
+    callback({ ...currentMockUser, emailVerified: true });
+  } else {
+    callback(null);
+  }
   return () => {
     mockUserListener = null;
   };
@@ -78,7 +84,8 @@ const mockSignUp = async (email, password, displayName, avatarFile) => {
     email,
     displayName: displayName || email.split("@")[0],
     photoURL,
-    status: "Exploring rooms..."
+    status: "Exploring rooms...",
+    emailVerified: true
   };
 
   users.push({ ...newUser, password }); // In mock, we store password simply
@@ -103,7 +110,8 @@ const mockSignIn = async (email, password) => {
     email: user.email,
     displayName: user.displayName,
     photoURL: user.photoURL,
-    status: user.status || "Hey there! I am using Chatify."
+    status: user.status || "Hey there! I am using Chatify.",
+    emailVerified: true
   };
 
   currentMockUser = authUser;
@@ -148,6 +156,28 @@ const mockUpdateProfile = async (updates) => {
   return updatedUser;
 };
 
+const mockSignInWithGoogle = async () => {
+  const mockUser = {
+    uid: "mock_google_" + Math.random().toString(36).substr(2, 9),
+    email: "google.user@example.com",
+    displayName: "Google User",
+    photoURL: getDefaultAvatar("Google User"),
+    status: "Exploring rooms...",
+    emailVerified: true
+  };
+
+  const users = getMockUsers();
+  if (!users.find(u => u.uid === mockUser.uid)) {
+    users.push({ ...mockUser, password: "" });
+    saveMockUsers(users);
+  }
+
+  currentMockUser = mockUser;
+  localStorage.setItem("chat_app_mock_user", JSON.stringify(mockUser));
+  if (mockUserListener) mockUserListener(mockUser);
+  return mockUser;
+};
+
 
 /* ==========================================
    LIVE FIREBASE AUTH IMPLEMENTATION
@@ -169,7 +199,8 @@ const liveOnAuthStateChanged = (callback) => {
         email: user.email,
         displayName: user.displayName || user.email.split("@")[0],
         photoURL: user.photoURL || getDefaultAvatar(user.displayName || user.email),
-        status: customStatus
+        status: customStatus,
+        emailVerified: user.emailVerified
       });
     } else {
       callback(null);
@@ -207,12 +238,19 @@ const liveSignUp = async (email, password, displayName, avatarFile) => {
     photoURL
   });
 
+  try {
+    await sendEmailVerification(user);
+  } catch (e) {
+    console.error("Failed to send verification email:", e);
+  }
+
   return {
     uid: user.uid,
     email: user.email,
     displayName: user.displayName,
     photoURL: user.photoURL,
-    status: "Active"
+    status: "Active",
+    emailVerified: user.emailVerified
   };
 };
 
@@ -231,7 +269,8 @@ const liveSignIn = async (email, password) => {
     email: user.email,
     displayName: user.displayName,
     photoURL: user.photoURL || getDefaultAvatar(user.displayName || user.email),
-    status: customStatus
+    status: customStatus,
+    emailVerified: user.emailVerified
   };
 };
 
@@ -285,6 +324,27 @@ const liveUpdateProfile = async (updates) => {
   };
 };
 
+const liveSignInWithGoogle = async () => {
+  const provider = new GoogleAuthProvider();
+  const userCredential = await signInWithPopup(auth, provider);
+  const user = userCredential.user;
+  
+  let customStatus = "Active";
+  try {
+    const statuses = JSON.parse(localStorage.getItem("chat_app_fb_statuses") || "{}");
+    customStatus = statuses[user.uid] || "Available";
+  } catch {}
+
+  return {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName || user.email.split("@")[0],
+    photoURL: user.photoURL || getDefaultAvatar(user.displayName || user.email),
+    status: customStatus,
+    emailVerified: user.emailVerified
+  };
+};
+
 /* ==========================================
    EXPORT BRIDGED AUTH OPERATIONS
    ========================================== */
@@ -294,4 +354,5 @@ export const signUp = isFirebaseConfigured ? liveSignUp : mockSignUp;
 export const signIn = isFirebaseConfigured ? liveSignIn : mockSignIn;
 export const signOut = isFirebaseConfigured ? liveSignOut : mockSignOut;
 export const updateProfile = isFirebaseConfigured ? liveUpdateProfile : mockUpdateProfile;
+export const signInWithGoogle = isFirebaseConfigured ? liveSignInWithGoogle : mockSignInWithGoogle;
 export { getDefaultAvatar };

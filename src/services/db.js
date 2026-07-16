@@ -32,7 +32,8 @@ const fileToBase64 = (file) => {
 
 const mockListeners = {
   rooms: [],
-  messages: {} // roomId -> callback[]
+  messages: {}, // roomId -> callback[]
+  typing: {} // roomId -> callback[]
 };
 
 const getMockRooms = () => {
@@ -208,6 +209,51 @@ const mockLeaveRoom = async (roomId, user) => {
   }
 };
 
+const mockTypingStates = {};
+
+const mockSetUserTypingStatus = async (roomId, user, isTyping) => {
+  if (!mockTypingStates[roomId]) {
+    mockTypingStates[roomId] = {};
+  }
+  
+  mockTypingStates[roomId][user.uid] = {
+    uid: user.uid,
+    displayName: user.displayName,
+    isTyping,
+    lastActive: Date.now()
+  };
+
+  // Trigger listeners
+  if (mockListeners.typing[roomId]) {
+    const activeTimeLimit = Date.now() - 6000;
+    const typingList = Object.values(mockTypingStates[roomId])
+      .filter(u => u.uid !== user.uid && u.isTyping && u.lastActive > activeTimeLimit)
+      .map(u => u.displayName);
+    
+    mockListeners.typing[roomId].forEach(cb => cb(typingList));
+  }
+};
+
+const mockSubscribeToTypingUsers = (roomId, currentUser, callback) => {
+  if (!mockListeners.typing[roomId]) {
+    mockListeners.typing[roomId] = [];
+  }
+  mockListeners.typing[roomId].push(callback);
+
+  // Emit initial state
+  const activeTimeLimit = Date.now() - 6000;
+  const list = mockTypingStates[roomId]
+    ? Object.values(mockTypingStates[roomId])
+        .filter(u => u.uid !== currentUser.uid && u.isTyping && u.lastActive > activeTimeLimit)
+        .map(u => u.displayName)
+    : [];
+  callback(list);
+
+  return () => {
+    mockListeners.typing[roomId] = mockListeners.typing[roomId].filter(cb => cb !== callback);
+  };
+};
+
 
 /* ==========================================
    LIVE FIREBASE FIRESTORE & STORAGE IMPLEMENTATION
@@ -331,6 +377,34 @@ const liveLeaveRoom = async (roomId, user) => {
   const docRef = doc(db, "rooms", roomId);
   await updateDoc(docRef, {
     members: arrayRemove(user.uid)
+  });
+};
+
+const liveSetUserTypingStatus = async (roomId, user, isTyping) => {
+  try {
+    const docRef = doc(db, "rooms", roomId, "typing", user.uid);
+    await setDoc(docRef, {
+      uid: user.uid,
+      displayName: user.displayName,
+      isTyping,
+      lastActive: Date.now()
+    }, { merge: true });
+  } catch (e) {
+    console.error("Error setting typing status:", e);
+  }
+};
+
+const liveSubscribeToTypingUsers = (roomId, currentUser, callback) => {
+  const q = collection(db, "rooms", roomId, "typing");
+  return onSnapshot(q, (snapshot) => {
+    const activeTimeLimit = Date.now() - 6000; // 6 seconds stale limit
+    const typingList = snapshot.docs
+      .map(doc => doc.data())
+      .filter(u => u.uid !== currentUser.uid && u.isTyping && u.lastActive > activeTimeLimit)
+      .map(u => u.displayName);
+    callback(typingList);
+  }, (error) => {
+    console.error("Error subscribing to typing status:", error);
   });
 };
 
@@ -470,3 +544,5 @@ export const subscribeToOnlineUsers = isFirebaseConfigured ? liveSubscribeToOnli
 export const updateUserPresence = isFirebaseConfigured ? liveUpdateUserPresence : mockUpdateUserPresence;
 export const joinRoomWithCode = isFirebaseConfigured ? liveJoinRoomWithCode : mockJoinRoomWithCode;
 export const leaveRoom = isFirebaseConfigured ? liveLeaveRoom : mockLeaveRoom;
+export const setUserTypingStatus = isFirebaseConfigured ? liveSetUserTypingStatus : mockSetUserTypingStatus;
+export const subscribeToTypingUsers = isFirebaseConfigured ? liveSubscribeToTypingUsers : mockSubscribeToTypingUsers;
