@@ -11,7 +11,8 @@ import {
   getDocs,
   updateDoc,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  deleteDoc
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage, isFirebaseConfigured } from "./firebase";
@@ -136,6 +137,16 @@ const mockSubscribeToMessages = (roomId, callback) => {
   return () => {
     mockListeners.messages[roomId] = mockListeners.messages[roomId].filter(cb => cb !== callback);
   };
+};
+
+const mockDeleteMessage = async (roomId, messageId) => {
+  let messages = getMockMessages(roomId);
+  messages = messages.filter(m => m.id !== messageId);
+  saveMockMessages(roomId, messages);
+  
+  if (mockListeners.messages[roomId]) {
+    mockListeners.messages[roomId].forEach(cb => cb(messages));
+  }
 };
 
 const mockSendMessage = async (roomId, text, imageFile, sender) => {
@@ -313,6 +324,16 @@ const liveSubscribeToMessages = (roomId, callback) => {
   }, (error) => {
     console.error("Error subscribing to messages:", error);
   });
+};
+
+const liveDeleteMessage = async (roomId, messageId) => {
+  try {
+    const docRef = doc(db, "rooms", roomId, "messages", messageId);
+    await deleteDoc(docRef);
+  } catch (e) {
+    console.error("Error deleting message:", e);
+    throw e;
+  }
 };
 
 const withTimeout = (promise, ms = 2500) => {
@@ -546,3 +567,4 @@ export const joinRoomWithCode = isFirebaseConfigured ? liveJoinRoomWithCode : mo
 export const leaveRoom = isFirebaseConfigured ? liveLeaveRoom : mockLeaveRoom;
 export const setUserTypingStatus = isFirebaseConfigured ? liveSetUserTypingStatus : mockSetUserTypingStatus;
 export const subscribeToTypingUsers = isFirebaseConfigured ? liveSubscribeToTypingUsers : mockSubscribeToTypingUsers;
+export const deleteMessage = isFirebaseConfigured ? liveDeleteMessage : mockDeleteMessage;

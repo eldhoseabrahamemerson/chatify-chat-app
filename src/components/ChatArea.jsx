@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Image, X, Smile, MessageSquare, ArrowLeft, Lock, Key, LogOut } from "lucide-react";
-import { sendMessage, subscribeToMessages, subscribeToTypingUsers, setUserTypingStatus } from "../services/db";
+import { Send, Image, X, Smile, MessageSquare, ArrowLeft, Lock, Key, LogOut, Trash2 } from "lucide-react";
+import { sendMessage, subscribeToMessages, subscribeToTypingUsers, setUserTypingStatus, deleteMessage } from "../services/db";
 
 const EMOJIS = ["😀", "😂", "🔥", "👍", "❤️", "🙌", "🎉", "💻", "✨", "🚀", "💡", "👀"];
 
@@ -150,6 +150,17 @@ export default function ChatArea({
         await onLeaveRoom(activeRoom.id);
       } catch (error) {
         console.error("Failed to leave room:", error);
+      }
+    }
+  };
+
+  const handleDeleteMessage = async (messageId) => {
+    if (window.confirm("Are you sure you want to delete this message?")) {
+      try {
+        await deleteMessage(activeRoom.id, messageId);
+      } catch (error) {
+        console.error("Failed to delete message:", error);
+        alert("Failed to delete message.");
       }
     }
   };
@@ -332,8 +343,17 @@ export default function ChatArea({
                           />
                         )}
                       </div>
-                      <div className="message-meta">
+                      <div className="message-meta" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <span>{formatTime(msg.createdAt)}</span>
+                        {isSelf && (
+                          <button 
+                            onClick={() => handleDeleteMessage(msg.id)} 
+                            title="Delete message"
+                            className="delete-msg-btn"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -1162,9 +1162,7 @@ body {
   display: flex;
   justify-content: center;
   margin: 16px 0;
-  position: sticky;
-  top: 12px;
-  z-index: 2;
+  width: 100%;
 }
 
 .date-divider span {
@@ -1302,4 +1300,28 @@ body {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+}
+
+/* Delete Message Button */
+.delete-msg-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-fast);
+  opacity: 0.4;
+}
+
+.message-group:hover .delete-msg-btn {
+  opacity: 1;
+}
+
+.delete-msg-btn:hover {
+  color: var(--danger) !important;
+  background-color: rgba(239, 68, 68, 0.15);
 }
