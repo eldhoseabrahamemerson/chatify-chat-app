@@ -17,6 +17,16 @@ export default function App() {
   
   const [rooms, setRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
+  const hasAutoSelectedRef = useRef(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   
   const [searchQuery, setSearchQuery] = useState("");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -36,6 +46,7 @@ export default function App() {
       // Clear active room if logged out
       if (!user) {
         setActiveRoom(null);
+        hasAutoSelectedRef.current = false;
       }
     });
 
@@ -89,23 +100,20 @@ export default function App() {
       const sorted = [...updatedRooms].sort((a, b) => b.createdAt - a.createdAt);
       setRooms(sorted);
       
-      // Auto-select general or first room if no room is selected
-      if (sorted.length > 0 && !activeRoom) {
-        // Look for General room first
-        const general = sorted.find(r => r.id === "room_general") || sorted[0];
-        setActiveRoom(general);
+      // Auto-select general or first room on initial load (desktop only)
+      if (sorted.length > 0 && !hasAutoSelectedRef.current) {
+        if (window.innerWidth > 768) {
+          const general = sorted.find(r => r.id === "room_general") || sorted[0];
+          setActiveRoom(general);
+        }
+        hasAutoSelectedRef.current = true;
       }
     });
 
     return () => unsubscribe();
   }, [currentUser]);
 
-  // Auto-open mobile sidebar if no room is selected (helps on mobile onboarding)
-  useEffect(() => {
-    if (!activeRoom) {
-      setIsMobileSidebarOpen(true);
-    }
-  }, [activeRoom]);
+
 
   const handleLeaveRoom = async (roomId) => {
     try {
@@ -171,28 +179,34 @@ export default function App() {
       )}
 
       <div className="app-container">
-        <Sidebar
-          currentUser={currentUser}
-          rooms={rooms}
-          activeRoom={activeRoom}
-          setActiveRoom={setActiveRoom}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenCreateRoom={() => setShowCreateRoom(true)}
-          onOpenJoinPrivate={() => setShowJoinRoom(true)}
-          isMobileOpen={isMobileSidebarOpen}
-          setIsMobileOpen={setIsMobileSidebarOpen}
-          onlineUsers={onlineUsers}
-        />
+        {(!isMobile || !activeRoom) && (
+          <Sidebar
+            currentUser={currentUser}
+            rooms={rooms}
+            activeRoom={activeRoom}
+            setActiveRoom={setActiveRoom}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            onOpenSettings={() => setShowSettings(true)}
+            onOpenCreateRoom={() => setShowCreateRoom(true)}
+            onOpenJoinPrivate={() => setShowJoinRoom(true)}
+            isMobileOpen={isMobileSidebarOpen}
+            setIsMobileOpen={setIsMobileSidebarOpen}
+            onlineUsers={onlineUsers}
+          />
+        )}
 
-        <ChatArea
-          activeRoom={activeRoom}
-          currentUser={currentUser}
-          onToggleSidebar={() => setIsMobileSidebarOpen(true)}
-          usersInRoom={onlineUsers.filter(u => u.currentRoomId === activeRoom?.id)}
-          onLeaveRoom={handleLeaveRoom}
-        />
+        {(!isMobile || activeRoom) && (
+          <ChatArea
+            activeRoom={activeRoom}
+            currentUser={currentUser}
+            onToggleSidebar={() => setIsMobileSidebarOpen(true)}
+            onBackToList={() => setActiveRoom(null)}
+            isMobile={isMobile}
+            usersInRoom={onlineUsers.filter(u => u.currentRoomId === activeRoom?.id)}
+            onLeaveRoom={handleLeaveRoom}
+          />
+        )}
 
         {/* Settings Modal */}
         {showSettings && (

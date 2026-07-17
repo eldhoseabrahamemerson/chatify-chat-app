@@ -8,6 +8,8 @@ export default function ChatArea({
   activeRoom, 
   currentUser, 
   onToggleSidebar,
+  onBackToList,
+  isMobile,
   usersInRoom = [],
   onLeaveRoom
 }) {
@@ -196,9 +198,23 @@ export default function ChatArea({
       {/* Chat Header */}
       <div className="chat-header" style={{ gap: "12px", flexWrap: "wrap", height: "auto", minHeight: "68px", padding: "10px 24px" }}>
         <div className="chat-header-info">
-          <button className="icon-btn mobile-only-btn" onClick={onToggleSidebar}>
-            <ArrowLeft size={20} />
-          </button>
+          {isMobile && (
+            <button 
+              className="icon-btn" 
+              onClick={onBackToList}
+              title="Back to channels"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: "8px",
+                color: "var(--text-secondary)",
+                cursor: "pointer"
+              }}
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
           <div className="chat-header-details">
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <h3 className="chat-header-title"># {activeRoom.name}</h3>
